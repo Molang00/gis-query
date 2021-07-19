@@ -1,0 +1,13 @@
+SET standard_conforming_strings = OFF;
+DROP TABLE IF EXISTS "public"."gps_history_dump" CASCADE;
+BEGIN;
+CREATE TABLE "public"."gps_history_dump" ( "ogc_fid" SERIAL, CONSTRAINT "gps_history_dump_pk" PRIMARY KEY ("ogc_fid") );
+SELECT AddGeometryColumn('public','gps_history_dump','wkb_geometry',5179,'POINT',2);
+CREATE INDEX "gps_history_dump_wkb_geometry_geom_idx" ON "public"."gps_history_dump" USING GIST ("wkb_geometry");
+ALTER TABLE "public"."gps_history_dump" ADD COLUMN "idx" NUMERIC(10,0);
+INSERT INTO "public"."gps_history_dump" ("wkb_geometry" , "idx") VALUES ('01010000203B1400000F885409AAF52C4181DDCA2C13BA3D41', 0);
+INSERT INTO "public"."gps_history_dump" ("wkb_geometry" , "idx") VALUES ('01010000203B14000064C0DE62F6F62C417707849636B93D41', 1);
+INSERT INTO "public"."gps_history_dump" ("wkb_geometry" , "idx") VALUES ('01010000203B140000A91DAA1F73F82C41DAFF71F24BB93D41', 2);
+INSERT INTO "public"."gps_history_dump" ("wkb_geometry" , "idx") VALUES ('01010000203B1400009885DE552CFA2C41198736DA38B93D41', 3);
+INSERT INTO "public"."gps_history_dump" ("wkb_geometry" , "idx") VALUES ('01010000203B1400008335D7D7E7F92C41A19B30ED64B83D41', 4);
+COMMIT;
