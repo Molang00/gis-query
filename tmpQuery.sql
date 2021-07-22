@@ -460,3 +460,5 @@ from nearest_neighberhood_road_geom_public prev
 
 
 
+
+select * from revise_gps('test_route');

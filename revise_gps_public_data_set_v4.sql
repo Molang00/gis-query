@@ -105,8 +105,8 @@ BEGIN
 END; $$ 
 Language plpgsql;
 
-create or replace function revise_gps(
-	input_route_id varchar(64)
+create or replace function revise_gps_geom(
+		input_route_id varchar(64)
 ) Returns table ( 
 		geom geometry
 ) AS $$
@@ -152,7 +152,7 @@ begin
 	return query 
 	with revised_gps as (
 		select 
-			(ST_DumpPoints(collected_sp.geom)).geom 
+			st_transform((ST_DumpPoints(collected_sp.geom)).geom, 4326) as geom
 		from (
 				select 
 					st_lineMerge(st_collect(sp.geom)) as geom 
@@ -172,7 +172,23 @@ END; $$
 Language plpgsql;
 
 
-select revise_gps('test_route');
+create or replace function revise_gps(
+		input_route_id varchar(64)
+) Returns table ( 
+		lat float,
+		lng float
+) AS $$
+begin
+	return query 
+	select
+		st_y(geom) as lat,
+		st_x(geom) as lng
+	from revise_gps_geom(input_route_id);
+END; $$ 
+Language plpgsql;
+
+
+select * from revise_gps('test_route');
 
 
 
