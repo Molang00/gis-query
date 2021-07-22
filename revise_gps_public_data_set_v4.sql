@@ -124,7 +124,7 @@ begin
 	from gps_history gh,
 		LATERAL findMinDistanceGeometryObjectsByAPoint(
 				ST_transform(gh.geom, 5179),
-				'test_route'
+				input_route_id
 		) as frst
 		where gh.route_id = input_route_id;
 	
@@ -188,7 +188,7 @@ END; $$
 Language plpgsql;
 
 
-select * from revise_gps('test_route');
+select * from revise_gps('test');
 
 
 
