@@ -1,62 +1,82 @@
--- DROP FUNCTION findMinDistanceGeometryObjectsByAPoint(point geometry);
+
+-- DROP FUNCTION findMinDistanceGeometryObjectsByAPoint(point geometry, route_id varchar(64));
 create or replace function findMinDistanceGeometryObjectsByAPoint(
-	point geometry
-) Returns table (
-		distance float, 
-		id integer, 
-		source integer,
-		target integer,
-		geom geometry, 
-		cp_point_on_line geometry
+	point geometry,
+	route_id varchar(64)
+) Returns table ( 
+		vertex_id bigint, 
+		cp_point_on_road geometry
 ) AS $$
 DECLARE
 	SRID integer := 5179; --SRID: 5179
-	METER_SRID integer := 5179; --Massachusetts state plane meters
 	LIMITS integer := 1;
-BEGIN
-	return query	
-	select ST_DISTANCE(
-		ST_Transform(r.geom, METER_SRID), 
-		ST_Transform(point, METER_SRID)
-	) as distance, 
-	r.id as id,
-	r.source as source,
-	r.target as target,
-	r.geom as geom,
-	st_closestpoint(r.geom, point) as cp_point_on_line
-	from roads_tlp r
-	order by r.geom <-> point
-	limit LIMITS;
+begin
+	return query
+	with minimumDistanceGeometryOnRoad as (
+		select 
+			st_distance(r.geom, point) as distance,
+			r.geom as geom,
+			r.source,
+			r.target,
+			st_closestpoint(r.geom, point) as cp_point_on_road
+		from roads_tlp r
+		order by r.geom <-> point
+		limit LIMITS
+	), new_vertices as (
+		insert into 
+			roads_tlp_vertices_pgr(
+				the_geom,
+				route_id
+			)
+		select 
+			mdgr.cp_point_on_road as the_geom,
+			route_id
+		from minimumDistanceGeometryOnRoad mdgr
+		returning id, the_geom as point_geom
+	), new_edge1 as (
+		insert into 
+			roads_tlp (
+				geom, 
+				source,
+				target,
+				route_id
+			)
+		select 
+			st_geometryn(st_split(st_snap(mdgr.geom, nv.point_geom, 0.000001), nv.point_geom), 1), 
+			mdgr.source, 
+			nv.id,
+			route_id
+		from minimumDistanceGeometryOnRoad mdgr 
+		inner join new_vertices nv on st_equals(mdgr.cp_point_on_road, nv.point_geom)
+		returning geom, source, target
+	), new_edge2 as (
+		insert into 
+			roads_tlp (
+				geom,
+				source,
+				target,
+				route_id
+			)
+		select 
+			st_geometryn(st_split(st_snap(mdgr.geom, nv.point_geom, 0.000001), nv.point_geom), 2), 
+			nv.id, 
+			mdgr.target,
+			route_id
+		from minimumDistanceGeometryOnRoad mdgr
+		inner join new_vertices nv on st_equals(mdgr.cp_point_on_road, nv.point_geom)
+		returning geom, source, target
+	)	
+	select 
+		id as vertex_id,
+		point_geom as cp_point_on_road
+	from new_vertices ;
+
 END; $$ 
 Language plpgsql;
 
--- create nearest road geometry table by gps history
-CREATE TABLE if not exists nearest_neighberhood_road_geom_public (
-    idx integer,
-    id integer,
-    source integer,
-    target integer,
-    distance double precision,
-    geom geometry,
-    cp_point_on_line geometry
-);
-truncate nearest_neighberhood_road_geom_public;
-insert into nearest_neighberhood_road_geom_public select 
-	gh.idx::integer as idx,
-	frst.id::integer as id,
-	frst.source:: integer as source,
-	frst.target:: integer as target,
-	frst.distance as distance,
-	frst.geom as geom,
-	frst.cp_point_on_line as cp_point_on_line
-from gps_history gh,
-	LATERAL findMinDistanceGeometryObjectsByAPoint(ST_transform(gh.geom, 5179)) as frst;
-
--- find shortest path with two geometry
--- DROP FUNCTION if exists findShortestPath(integer,integer);
 create or replace function findShortestPath(
-	sourceId integer,
-	targetId integer,
+	sourceId bigint,
+	targetId bigint,
 	idx integer
 ) returns table (
 	seq integer,
@@ -85,29 +105,78 @@ BEGIN
 END; $$ 
 Language plpgsql;
 
+create or replace function revise_gps(
+	input_route_id varchar(64)
+) Returns table ( 
+		geom geometry
+) AS $$
+DECLARE
+	SRID integer := 5179; --SRID: 5179
+	LIMITS integer := 1;
+begin
 
--- drop table if exists shortest_path_public;
-CREATE TABLE if not exists shortest_path_public (
-    idx integer,
-    seq integer,
-    source integer,
-    target integer,
-    node bigint,
-    cost double precision,
-    agg_cost double precision,
-    geom geometry
-);
-truncate shortest_path_public;
-insert into shortest_path_public select 
-	prev.idx,
-	fsp.seq,
-	prev.id as source,
-	next.id as target,
-	fsp.node,
-	fsp.cost,
-	fsp.agg_cost,
-	fsp.geom
-from nearest_neighberhood_road_geom_public prev
-	inner join nearest_neighberhood_road_geom_public next
-		on prev.idx + 1 = next.idx,
-	lateral findshortestpath(prev.target, next.source, prev.idx) as fsp;
+	-- create nearest road geometry table by gps history
+	insert into nearest_neighberhood_road_geom_public select 
+		input_route_id,
+		gh.idx::integer as idx,
+		frst.vertex_id::bigint as vertex_id,
+		frst.cp_point_on_road as cp_point_on_road
+	from gps_history gh,
+		LATERAL findMinDistanceGeometryObjectsByAPoint(
+				ST_transform(gh.geom, 5179),
+				'test_route'
+		) as frst
+		where gh.route_id = input_route_id;
+	
+	-- drop table if exists shortest_path_public;
+	insert into shortest_path_public select 
+		prev.idx,
+		fsp.seq,
+		prev.vertex_id as source,
+		next.vertex_id as target,
+		fsp.node,
+		fsp.cost,
+		fsp.agg_cost,
+		fsp.geom,
+		prev.route_id
+	from nearest_neighberhood_road_geom_public prev
+		inner join nearest_neighberhood_road_geom_public next
+			on prev.idx + 1 = next.idx,
+		lateral findshortestpath(prev.vertex_id, next.vertex_id, prev.idx) as fsp
+		where prev.route_id = input_route_id;
+		
+	delete from nearest_neighberhood_road_geom_public where route_id = input_route_id;
+	delete from roads_tlp_vertices_pgr where route_id = input_route_id;
+	delete from roads_tlp where route_id = input_route_id;
+	
+	return query 
+	with revised_gps as (
+		select 
+			(ST_DumpPoints(collected_sp.geom)).geom 
+		from (
+				select 
+					st_lineMerge(st_collect(sp.geom)) as geom 
+				from (
+					select * 
+					from shortest_path_public 
+					where route_id = input_route_id 
+					order by idx
+				) sp 
+			) collected_sp
+	), reset_shortest_path_table as (
+		delete from shortest_path_public where route_id = input_route_id
+	)
+	select * from revised_gps;
+
+END; $$ 
+Language plpgsql;
+
+
+select revise_gps('test_route');
+
+
+
+
+
+
+

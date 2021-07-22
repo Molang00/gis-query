@@ -1,21 +1,21 @@
-drop table if exists roads;
-
-create table roads as
-SELECT gid as id, 
-	geom,
-	rep_cn as address
-FROM tl_sprd_manage;
-
-truncate roads_split_union;
-insert into roads_split_union
-select 
-	(p_geom).path[1] As path, 
-	(p_geom).geom 
-from (
-		select 
-			st_dump(ST_Union(geom)) as p_geom
-		from roads
-	) as foo;
+--drop table if exists roads;
+--
+--create table roads as
+--SELECT gid as id, 
+--	geom,
+--	rep_cn as address
+--FROM tl_sprd_manage;
+--
+--truncate roads_split_union;
+--insert into roads_split_union
+--select 
+--	(p_geom).path[1] As path, 
+--	(p_geom).geom 
+--from (
+--		select 
+--			st_dump(ST_Union(geom)) as p_geom
+--		from roads
+--	) as foo;
 
 drop table if exists roads_tlp;
 drop table if exists roads_tlp_vertices_pgr;
@@ -25,6 +25,7 @@ CREATE TABLE roads_tlp (
 	geom geometry NULL,
 	"source" int4 NULL,
 	target int4 NULL,
+	route_id varchar(64),
 	CONSTRAINT primary_key_id PRIMARY KEY (id)
 );
 CREATE INDEX road_source_idx ON public.roads_tlp USING btree (source);
@@ -32,10 +33,36 @@ CREATE INDEX road_target_idx ON public.roads_tlp USING btree (target);
 CREATE INDEX roads_tlp_geom_idx ON public.roads_tlp USING gist (geom);
 CREATE INDEX roads_tlp_id_idx ON public.roads_tlp USING btree (id);
 
-INSERT INTO roads_tlp 
+INSERT INTO roads_tlp (geom)
 select 
-	path as id, 
 	geom 
 from roads_split_union;
 
 select pgr_createTopology('roads_tlp', 0.0001, 'geom', 'id');
+
+alter table roads_tlp_vertices_pgr add column route_id varchar(64);
+
+
+drop table nearest_neighberhood_road_geom_public;
+CREATE TABLE if not exists nearest_neighberhood_road_geom_public (
+	route_id varchar(64),
+    idx integer,
+    vertex_id bigint,
+    cp_point_on_road geometry
+);
+truncate nearest_neighberhood_road_geom_public;
+
+
+drop table shortest_path_public;
+CREATE TABLE if not exists shortest_path_public (
+    idx integer,
+    seq integer,
+    source integer,
+    target integer,
+    node bigint,
+    cost double precision,
+    agg_cost double precision,
+    geom geometry,
+   	route_id varchar(64)
+);
+truncate shortest_path_public;
