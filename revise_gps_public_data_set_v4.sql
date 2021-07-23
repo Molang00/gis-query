@@ -95,8 +95,8 @@ BEGIN
 			 id,
 			 source,
 			 target,
-			 st_length(geom) as cost,
-			 st_length(geom) as reverse_cost
+			 COALESCE(st_length(geom), 0) as cost,
+			 COALESCE(st_length(geom), 0) as reverse_cost
 		  FROM roads_tlp;',
 		  sourceId,
 		  targetId, false) as pd
@@ -112,8 +112,16 @@ create or replace function revise_gps_geom(
 ) AS $$
 DECLARE
 	SRID integer := 5179; --SRID: 5179
+	SRID_4326 integer := 4326;
 	LIMITS integer := 1;
 begin
+	update gps_history gh 
+		set geom_4326 = ST_SetSRID(st_makepoint(gh.lng, gh.lat), 4326) 
+	where gh.route_id = input_route_id;
+
+	update gps_history gh
+		set geom = st_transform(gh.geom_4326, 5179)
+	where gh.route_id = input_route_id;
 
 	-- create nearest road geometry table by gps history
 	insert into nearest_neighberhood_road_geom_public select 
@@ -188,7 +196,7 @@ END; $$
 Language plpgsql;
 
 
-select * from revise_gps('test');
+select * from revise_gps('-XM0b6vsSYqPMK8hF29CAA');
 
 
 

@@ -460,5 +460,22 @@ from nearest_neighberhood_road_geom_public prev
 
 
 
+select * from gps_history gh order by route_id, idx;
+select * from gps_history gh where route_id = '-XM0b6vsSYqPMK8hF29CAA' order by route_id, idx;
+delete from gps_history where route_id = 'yT9L27XBRPGgTMNkmD-vDg';
+delete from gps_history where route_id = '-XM0b6vsSYqPMK8hF29CAA';
 
-select * from revise_gps('test_route');
+
+	update gps_history 
+		set geom_4326 = ST_SetSRID(st_makepoint(lng, lat), 4326) 
+	where route_id = '-XM0b6vsSYqPMK8hF29CAA';
+
+	update gps_history 
+		set geom = st_transform(geom_4326, 5179)
+	where route_id = '-XM0b6vsSYqPMK8hF29CAA';
+update gps_history set lat = st_y(geom_4326);
+
+select * from roads_tlp_vertices_pgr rtvp where route_id = '-XM0b6vsSYqPMK8hF29CAA';
+
+select * from revise_gps('-XM0b6vsSYqPMK8hF29CAA');
+select * from revise_gps_geom('test');
